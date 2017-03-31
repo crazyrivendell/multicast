@@ -108,7 +108,7 @@ def client(group):
     i = 0
     while True:
         try:
-            _in, _out, _err = select.select([s, ], [], [], None)
+            _in, _out, _err = select.select([s, ], [s,], [], None)
             if len(_in) > 0:
                 # Receive Search Message
                 data, client = s.recvfrom(PACK_SIZE)
@@ -117,7 +117,6 @@ def client(group):
                 # Send Response Message
                 _data = 'time is ' + time.asctime(time.localtime(time.time()))
                 s.sendto(('Notifying----' + _data).encode(), client)
-                i += 1
         except Exception as e:
             print('Error: ', str(e))
             pass

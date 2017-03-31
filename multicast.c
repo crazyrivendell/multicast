@@ -14,6 +14,7 @@ Run Client:
 Only support IPV4
 TODO: support IPV6 if needed
 */
+
 #include <time.h>
 #include <stdio.h>
 #include <signal.h>
@@ -26,20 +27,24 @@ TODO: support IPV6 if needed
 #include <arpa/inet.h>
 #include <sys/fcntl.h> // for non-blocking
 
-#define EXAMPLE_PORT 8888
+#define EXAMPLE_PORT 1900
 #define EXAMPLE_GROUP "239.192.1.1"
 #define TIME_PERIOD 5   /* second */
 #define DEFAULT_TTL 10   /* Increase to reach other networks */
 
-void error(char *message)
+void error(char *message, int sock)
 {
     perror(message);
+    if (sock > 0) {
+        close(sock);
+    }
     exit(1);
 }
 
 void server()
 {
-    struct sockaddr_in addr;
+    struct sockaddr_in server_addr, client_addr;
+    struct in_addr localInterface;
     int addrlen, sock, ret;
     char message[64];
     struct timeval wait;
@@ -52,19 +57,24 @@ void server()
     /* Server */
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        error("socket error\n");
+        error("socket error\n", sock);
     }
-    bzero((char *)&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(EXAMPLE_PORT);
-    addr.sin_addr.s_addr = inet_addr(EXAMPLE_GROUP);
-    addrlen = sizeof(addr);
+    bzero((char *)&server_addr, sizeof(server_addr));
+    bzero((char *)&client_addr, sizeof(client_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(EXAMPLE_PORT);
+    server_addr.sin_addr.s_addr = inet_addr(EXAMPLE_GROUP);
+    addrlen = sizeof(server_addr);
     
     /*set TTL, default is 1*/
     u_char ttl = DEFAULT_TTL;
     if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl))) {
-        error("setsockopt:IP_MULTICAST_LOOP\n"); 
+        error("setsockopt:IP_MULTICAST_TTL\n", sock); 
+    }
+    /* Disable loopback so you do not receive your own datagrams. */
+    int loop = 0; 
+    if (setsockopt(sock,IPPROTO_IP, IP_MULTICAST_LOOP,&loop, sizeof(loop)) < 0) { 
+        error("setsockopt:IP_MULTICAST_LOOP\n", sock); 
     }
     
     while (1) {
@@ -73,52 +83,54 @@ void server()
             second = time(NULL);
             bzero(message, sizeof(message));
             sprintf(message, "Searching----time is %-24.24s", ctime(&second));
-            ret = sendto(sock, message, strlen(message), 0,(struct sockaddr *) &addr, addrlen);
+            ret = sendto(sock, message, strlen(message), 0,(struct sockaddr *) &server_addr, addrlen);
             if (ret < 0) {
-                error("sendto error\n");
+                error("sendto error\n", sock);
             }
         }
         
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
-        wait.tv_sec = TIME_PERIOD;
-        wait.tv_usec = 10;
+        wait.tv_sec = TIME_PERIOD*2;
+        wait.tv_usec = 50000;
         int _fds = select(sock+1, &readfds, NULL, NULL, &wait);
         if (_fds == -1) {
-            error("select error\n"); // error occurred in select()
+            error("select error\n", sock); // error occurred in select()
         }
         else if (_fds == 0) {
-            printf("Timeout occurred!  No data after %d seconds.\n",TIME_PERIOD);
+            printf("Timeout occurred!  No data after %d seconds.\n",TIME_PERIOD*2);
         }
         else{
             if (FD_ISSET(sock, &readfds)) {
                 /* Receive Response(Notifying) Message */
                 FD_CLR(sock, &readfds);
                 bzero(message, sizeof(message));
-                ret = recvfrom(sock, message, sizeof(message), 0, (struct sockaddr *) &addr, &addrlen);
+                ret = recvfrom(sock, message, sizeof(message), 0, (struct sockaddr *) &client_addr, &addrlen);
+                //ret = read(sock, message, sizeof(message));
                 if (ret < 0) {
-                    error("recvfrom error\n");
+                    error("recvfrom error\n", sock);
                 } else if (ret == 0) {
                     break;
                 }
                 else {
-                    printf("Server receive data:\n%s\nfrom Client:%s:%d\n", message, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+                    printf("Server receive data:\n%s\nfrom Client:%s:%d\n", message, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
                 }
             }
             else
                 printf("What?\n");
         }
-        printf("cycle\n");
     }
+    close(sock);
 }
 
 void client()
 {
-    struct sockaddr_in addr;
+    struct sockaddr_in server_addr, client_addr;
     int addrlen, sock, ret;
     struct ip_mreq mreq;
     char message[64];
     struct timeval wait;
+    unsigned long second = 0;
 
     fd_set readfds;
 
@@ -127,25 +139,29 @@ void client()
     /* Client */
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
-        error("socket error\n");
+        error("socket error\n", sock);
     }
-    bzero((char *)&addr, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(EXAMPLE_PORT);
-    addrlen = sizeof(addr);
-    if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        error("bind error\n");
+    bzero((char *)&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(EXAMPLE_PORT);
+    addrlen = sizeof(server_addr);
+    
+    /* Enable SO_REUSEADDR to allow multiple instances of this */
+    /* application to receive copies of the multicast datagrams. */
+    int reuse = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(reuse)) < 0) {
+        error("Setting SO_REUSEADDR error\n", sock);
     }
+    
+    if (bind(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+        error("bind error\n", sock);
+    }
+    
     mreq.imr_multiaddr.s_addr = inet_addr(EXAMPLE_GROUP);
     mreq.imr_interface.s_addr = htonl(INADDR_ANY);
     if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
-        error("setsockopt:IP_ADD_MEMBERSHIP\n");
-    }
-    
-    int loop = 1; 
-    if (setsockopt(sock,IPPROTO_IP, IP_MULTICAST_LOOP,&loop, sizeof(loop)) < 0) { 
-        error("setsockopt:IP_MULTICAST_LOOP\n"); 
+        error("setsockopt:IP_ADD_MEMBERSHIP\n", sock);
     }
     
     while (1) {
@@ -154,7 +170,7 @@ void client()
         FD_SET(sock, &readfds);
         int _fds = select(sock+1, &readfds, NULL, NULL, NULL);
         if (_fds == -1){
-            error("select error\n"); // error occurred in select()
+            error("select error\n", sock); // error occurred in select()
         }
         else if (_fds == 0) {
             printf("Timeout occurred!\n");
@@ -163,25 +179,25 @@ void client()
             if (FD_ISSET(sock, &readfds)) {
                 FD_CLR(sock, &readfds);
                 bzero(message, sizeof(message));
-                ret = recvfrom(sock, message, sizeof(message), 0, (struct sockaddr *) &addr, &addrlen);
+                ret = recvfrom(sock, message, sizeof(message), 0, (struct sockaddr *) &client_addr, &addrlen);
                 if (ret < 0) {
                     perror("recvfrom error\n");
                     if (setsockopt(sock, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
-                        error("setsockopt drop_mreq error\n");
+                        error("setsockopt drop_mreq error\n", sock);
                     }
                     exit(1);
                 } else if (ret == 0) {
                     break;
                 }
-                printf("Client receive data:\n%s\nfrom Server: %s:%d\n", message, inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+                printf("Client receive data:\n%s\nfrom Server: %s:%d\n", message, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
                 /*send */
                 bzero(message, sizeof(message));
-                time_t t = time(NULL);
-                sprintf(message, "Notifying----time is %-24.24s", ctime(&t));
-                ret = sendto(sock, message, strlen(message), 0, (struct sockaddr *)&addr, addrlen);
+                second = time(NULL);
+                sprintf(message, "Notifying----time is %-24.24s", ctime(&second));
+                ret = sendto(sock, message, strlen(message), 0, (struct sockaddr *)&client_addr, addrlen);
                 if (ret < 0) {
-                    error("sendto error\n");
+                    error("sendto error\n", sock);
                 }
             }
             else
@@ -189,6 +205,7 @@ void client()
 
         }
     }
+    close(sock);
 }
 
 
