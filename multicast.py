@@ -78,6 +78,7 @@ def server(group):
         except Exception as e:
             print('Error: ', str(e))
             pass
+        print("cycle")
 
 
 def client(group):

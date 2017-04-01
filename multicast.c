@@ -76,6 +76,8 @@ void server()
     if (setsockopt(sock,IPPROTO_IP, IP_MULTICAST_LOOP,&loop, sizeof(loop)) < 0) { 
         error("setsockopt:IP_MULTICAST_LOOP\n", sock); 
     }
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags & ~O_NONBLOCK);
     
     while (1) {
         /*Search Message*/
@@ -91,14 +93,14 @@ void server()
         
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
-        wait.tv_sec = TIME_PERIOD*2;
-        wait.tv_usec = 50000;
+        wait.tv_sec = 1;  /*wait time must less than TIME_PERIOD*/
+        wait.tv_usec = 500000;
         int _fds = select(sock+1, &readfds, NULL, NULL, &wait);
         if (_fds == -1) {
             error("select error\n", sock); // error occurred in select()
         }
         else if (_fds == 0) {
-            printf("Timeout occurred!  No data after %d seconds.\n",TIME_PERIOD*2);
+            //printf("Timeout occurred!  No data after %d seconds.\n",TIME_PERIOD);
         }
         else{
             if (FD_ISSET(sock, &readfds)) {
