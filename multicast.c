@@ -3,8 +3,8 @@ multicast.c
 The following program sends or receives multicast packets. If invoked
 with one argument, it sends a packet containing the current time to an
 arbitrarily chosen multicast group and UDP port. If invoked with no
-arguments, it receives and prints these packets. Start it as a sender on
-just one host and as a receiver on all the other hosts.
+arguments, it receives and prints these packets. Start it as a server on
+just one host and as a client on all the other hosts.
 compile:
     gcc -Werror -o multicast multicast.c
 Run Server:
