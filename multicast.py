@@ -19,9 +19,12 @@ import sys
 import select
 
 DEVICE = 'Obsidian_1_0001'
-MYPORT = 1900
 PACK_SIZE = 1024
+MYPORT = 1900
+#MYPORT = 5353
 MYGROUP_4 = '239.192.1.1'
+#MYGROUP_4 = '224.0.0.254'
+
 MYGROUP_6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
 MYTTL = 10  # Increase to reach other networks
 TIME_PERIOD = 5
@@ -78,7 +81,6 @@ def server(group):
         except Exception as e:
             print('Error: ', str(e))
             pass
-        print("cycle")
 
 
 def client(group):

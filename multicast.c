@@ -29,6 +29,8 @@ TODO: support IPV6 if needed
 
 #define EXAMPLE_PORT 1900
 #define EXAMPLE_GROUP "239.192.1.1"
+//#define EXAMPLE_PORT 5353
+//#define EXAMPLE_GROUP "224.0.0.254"
 #define TIME_PERIOD 5   /* second */
 #define DEFAULT_TTL 10   /* Increase to reach other networks */
 
@@ -40,6 +42,7 @@ void error(char *message, int sock)
     }
     exit(1);
 }
+
 
 void server()
 {
@@ -184,6 +187,7 @@ void client()
                     if (setsockopt(sock, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
                         error("setsockopt drop_mreq error\n", sock);
                     }
+                    close(sock);
                     exit(1);
                 } else if (ret == 0) {
                     break;
